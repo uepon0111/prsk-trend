@@ -17,6 +17,7 @@ if (!API_KEY) {
 const LIST_PATH = path.resolve(process.cwd(), 'videos_list.json');
 const OUT_DIR = path.resolve(process.cwd(), 'data');
 const OUT_PATH = path.join(OUT_DIR, 'videos.json');
+const RESET_MARKER = path.join(OUT_DIR, '.reset_done');
 
 async function fetchJson(url) {
   const res = await fetch(url);
@@ -118,6 +119,19 @@ function extractVideoIdFromUrl(urlStr) {
       if (v.videoId) existingMap.set(v.videoId, v);
     });
 
+    // Determine whether we should perform a one-time reset.
+    let isResetNeeded = false;
+    try {
+      await fs.stat(RESET_MARKER);
+      isResetNeeded = false;
+    } catch (e) {
+      // marker not found -> reset will be performed once and marker will be created
+      isResetNeeded = true;
+    }
+    if (isResetNeeded) {
+      console.log('*** data/videos.json を一度リセットします（.reset_done を作成します） ***');
+    }
+
     // entries: [{ videoId, url, banner, unit }, ...]
     const entries = [];
     for (const meta of list) {
@@ -185,25 +199,30 @@ function extractVideoIdFromUrl(urlStr) {
         const prev = existingMap.get(id);
         let history = prev && Array.isArray(prev.history) ? prev.history.slice() : [];
 
-        // normalize legacy 'date' entries by keeping them but not altering
-        // Check last entry datetime (either datetime or date)
-        let lastEntry = history.length ? history[history.length - 1] : null;
-        let lastIso = lastEntry ? isoFromEntry(lastEntry) : null;
-
-        if (!lastIso) {
-          // no previous history -> push new rounded entry
-          history.push({ datetime: currentRounded, views: views });
+        if (isResetNeeded) {
+          // One-time reset: discard previous history and keep only the current snapshot
+          history = [{ datetime: currentRounded, views: views }];
         } else {
-          // compare rounded iso strings: if last entry is at same rounded time, update; otherwise push
-          // convert lastIso to Date and round to 30min to be safe
-          let lastDate = new Date(lastIso);
-          // round lastDate to 30min
-          const roundedLast = nowRoundedTo30MinISO(lastDate);
-          if (roundedLast === currentRounded) {
-            // update last entry's views (works for both datetime and date legacy, we modify to datetime)
-            history[history.length - 1] = { datetime: currentRounded, views: views };
-          } else {
+          // normalize legacy 'date' entries by keeping them but not altering
+          // Check last entry datetime (either datetime or date)
+          let lastEntry = history.length ? history[history.length - 1] : null;
+          let lastIso = lastEntry ? isoFromEntry(lastEntry) : null;
+
+          if (!lastIso) {
+            // no previous history -> push new rounded entry
             history.push({ datetime: currentRounded, views: views });
+          } else {
+            // compare rounded iso strings: if last entry is at same rounded time, update; otherwise push
+            // convert lastIso to Date and round to 30min to be safe
+            let lastDate = new Date(lastIso);
+            // round lastDate to 30min
+            const roundedLast = nowRoundedTo30MinISO(lastDate);
+            if (roundedLast === currentRounded) {
+              // update last entry's views (works for both datetime and date legacy, we modify to datetime)
+              history[history.length - 1] = { datetime: currentRounded, views: views };
+            } else {
+              history.push({ datetime: currentRounded, views: views });
+            }
           }
         }
 
@@ -225,6 +244,15 @@ function extractVideoIdFromUrl(urlStr) {
     const out = { updated_at: new Date().toISOString(), videos: results };
     await fs.writeFile(OUT_PATH, JSON.stringify(out, null, 2), 'utf8');
     console.log('更新完了: data/videos.json を書き出しました。');
+
+    if (isResetNeeded) {
+      try {
+        await fs.writeFile(RESET_MARKER, new Date().toISOString(), 'utf8');
+        console.log('.reset_done を作成しました。次回以降は履歴の一括リセットは行われません。');
+      } catch (e) {
+        console.warn('注意: .reset_done の作成に失敗しました。', e.message);
+      }
+    }
   } catch (err) {
     console.error('Error:', err);
     process.exit(1);
