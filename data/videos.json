@@ -1,0 +1,50 @@
+{
+  "updated_at": "2025-11-17T10:09:44.690Z",
+  "videos": [
+    {
+      "videoId": "agbpbVVA78U?si=W1qFiIzmSilQyyl0",
+      "url": "https://youtu.be/agbpbVVA78U?si=W1qFiIzmSilQyyl0",
+      "title": "Unknown title",
+      "thumbnail": "",
+      "published": "",
+      "banner": "絵名",
+      "unit": "ニーゴ",
+      "history": [
+        {
+          "date": "2025-11-17",
+          "views": 0
+        }
+      ]
+    },
+    {
+      "videoId": "RyRfLSOewbU?si=-DFSLjS0p7WbMLy3",
+      "url": "https://youtu.be/RyRfLSOewbU?si=-DFSLjS0p7WbMLy3",
+      "title": "Unknown title",
+      "thumbnail": "",
+      "published": "",
+      "banner": "奏",
+      "unit": "ニーゴ",
+      "history": [
+        {
+          "date": "2025-11-17",
+          "views": 0
+        }
+      ]
+    },
+    {
+      "videoId": "b_EcPgJ7Fnk?si=rp36Fkjb-Gtx0gs8",
+      "url": "https://youtu.be/b_EcPgJ7Fnk?si=rp36Fkjb-Gtx0gs8",
+      "title": "Unknown title",
+      "thumbnail": "",
+      "published": "",
+      "banner": "杏",
+      "unit": "ビビバス",
+      "history": [
+        {
+          "date": "2025-11-17",
+          "views": 0
+        }
+      ]
+    }
+  ]
+}
