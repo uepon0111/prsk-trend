@@ -1,48 +1,48 @@
 {
-  "updated_at": "2025-11-17T10:09:44.690Z",
+  "updated_at": "2025-11-17T10:28:51.225Z",
   "videos": [
     {
-      "videoId": "agbpbVVA78U?si=W1qFiIzmSilQyyl0",
-      "url": "https://youtu.be/agbpbVVA78U?si=W1qFiIzmSilQyyl0",
-      "title": "Unknown title",
-      "thumbnail": "",
-      "published": "",
+      "videoId": "agbpbVVA78U",
+      "url": "https://youtu.be/agbpbVVA78U",
+      "title": "余花にみとれて / 25時、ナイトコードで。 × MEIKO",
+      "thumbnail": "https://i.ytimg.com/vi/agbpbVVA78U/hqdefault.jpg",
+      "published": "2024-12-09",
       "banner": "絵名",
       "unit": "ニーゴ",
       "history": [
         {
           "date": "2025-11-17",
-          "views": 0
+          "views": 6813669
         }
       ]
     },
     {
-      "videoId": "RyRfLSOewbU?si=-DFSLjS0p7WbMLy3",
-      "url": "https://youtu.be/RyRfLSOewbU?si=-DFSLjS0p7WbMLy3",
-      "title": "Unknown title",
-      "thumbnail": "",
-      "published": "",
+      "videoId": "RyRfLSOewbU",
+      "url": "https://youtu.be/RyRfLSOewbU",
+      "title": "D/N/A / 25時、ナイトコードで。 × 鏡音リン",
+      "thumbnail": "https://i.ytimg.com/vi/RyRfLSOewbU/hqdefault.jpg",
+      "published": "2025-03-28",
       "banner": "奏",
       "unit": "ニーゴ",
       "history": [
         {
           "date": "2025-11-17",
-          "views": 0
+          "views": 13600311
         }
       ]
     },
     {
-      "videoId": "b_EcPgJ7Fnk?si=rp36Fkjb-Gtx0gs8",
-      "url": "https://youtu.be/b_EcPgJ7Fnk?si=rp36Fkjb-Gtx0gs8",
-      "title": "Unknown title",
-      "thumbnail": "",
-      "published": "",
+      "videoId": "b_EcPgJ7Fnk",
+      "url": "https://youtu.be/b_EcPgJ7Fnk",
+      "title": "アクセラレイト / Vivid BAD SQUAD × 巡音ルカ",
+      "thumbnail": "https://i.ytimg.com/vi/b_EcPgJ7Fnk/hqdefault.jpg",
+      "published": "2025-08-06",
       "banner": "杏",
       "unit": "ビビバス",
       "history": [
         {
           "date": "2025-11-17",
-          "views": 0
+          "views": 1336574
         }
       ]
     }
