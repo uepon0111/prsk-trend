@@ -6,7 +6,6 @@
   <title>YouTube 再生数ランキング & トレンド ダッシュボード</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    /* 前回のデザインをベースに調整したスタイル（ダーク） */
     :root{
       --bg:#071022; --card:#0b1220; --muted:#9aa7bf; --accent:#6ee7b7;
       --glass: rgba(255,255,255,0.03); --card-radius:12px;
@@ -53,7 +52,10 @@
     <header>
       <div>
         <div class="title">YouTube 再生数ランキング & トレンド</div>
-        <div class="subtitle" style="font-size:13px;color:var(--muted)">GitHub Pages + GitHub Actions で日次更新される静的ダッシュボード</div>
+        <div class="subtitle" style="font-size:13px;color:var(--muted)">
+          GitHub Pages + GitHub Actions で 30 分ごとに更新される静的ダッシュボード
+          <div id="lastUpdated" style="margin-top:6px;font-size:12px;color:var(--muted)">最終更新: 読み込み中...</div>
+        </div>
       </div>
       <div class="controls">
         <input id="search" type="search" placeholder="タイトル / バナー / ユニット で検索">
@@ -99,7 +101,7 @@
           <div style="margin-top:12px;" class="rank-list card" id="rankList">
             読み込み中...
           </div>
-          <div class="footer-note">※ サムネイルをクリックすると右側でグラフ表示します。データは `data/videos.json` から読み込まれます。</div>
+          <div class="footer-note">※ サムネイルをクリックすると右側でグラフ表示します。データは <code>data/videos.json</code> から読み込まれます。</div>
         </div>
 
         <div class="card" style="margin-top:12px;">
@@ -110,8 +112,8 @@
             <button id="btnUnit" class="tabBtn">ユニット別</button>
           </div>
           <div style="margin-top:10px;color:var(--muted);font-size:13px">
-            ・動画の一覧・バナー・ユニットは `videos_list.json` で管理します。<br>
-            ・ワークフローが日次で `data/videos.json` を更新します。
+            ・動画の一覧・バナー・ユニットは <code>videos_list.json</code> で管理します。<br>
+            ・ワークフローが 30 分ごとに <code>data/videos.json</code> を更新します。
           </div>
         </div>
       </div>
@@ -160,35 +162,53 @@
         <div class="card" style="margin-top:12px;">
           <strong style="color:#fff">注記 / 操作</strong>
           <div style="margin-top:8px;color:var(--muted);font-size:13px">
-            ・`data/videos.json` は GitHub Actions によって更新されます。<br>
-            ・ワークフローの実行ログは GitHub Actions ページで確認してください。<br>
-            ・初回はワークフローを手動実行して `data/videos.json` を作成してください。
+            ・ページの最終更新時刻は <code>data/videos.json</code> の <code>updated_at</code> を表示しています。<br>
+            ・ワークフローが 30 分ごとに実行され、履歴は 30 分刻み（UTC）で保存されます。<br>
+            ・初回はワークフローを手動実行して <code>data/videos.json</code> を作成してください。
           </div>
         </div>
       </div>
     </div>
-
   </div>
 
 <script>
 /* --- helper --- */
 function fmt(n){ return n === null || n === undefined ? '—' : n.toLocaleString(); }
 function safe(s){ return String(s||''); }
+function parseISOorDateString(s){
+  if(!s) return null;
+  // accepts "YYYY-MM-DD" or full ISO
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(s + 'T00:00:00.000Z');
+  return new Date(s);
+}
 
 /* --- load data/videos.json --- */
 let DATA = [];
+let DATA_UPDATED_AT = null;
 async function loadData(){
   try{
-    const res = await fetch('data/videos.json', {cache: "no-store"});
+    const res = await fetch('/data/videos.json', {cache: "no-store"});
     if(!res.ok) throw new Error('data/videos.json が見つかりません: ' + res.status);
     const json = await res.json();
     DATA = json.videos || [];
+    DATA_UPDATED_AT = json.updated_at || null;
+    // show last updated in header
+    const lastEl = document.getElementById('lastUpdated');
+    if(DATA_UPDATED_AT){
+      const d = new Date(DATA_UPDATED_AT);
+      lastEl.innerText = '最終更新: ' + d.toLocaleString();
+    } else {
+      lastEl.innerText = '最終更新: —';
+    }
+
     buildGroupOptions();
     renderRankList();
     selectDefault();
   }catch(err){
     console.error(err);
     document.getElementById('rankList').innerText = 'データ読み込みエラー: ' + err.message;
+    const lastEl = document.getElementById('lastUpdated');
+    lastEl.innerText = '最終更新: エラー';
   }
 }
 
@@ -218,20 +238,43 @@ function buildGroupOptions(){
 
 function escapeHtml(s){ return String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
 
-/* --- compute delta (history must be array of {date, views} ascending) --- */
-function calcDelta(history, days){
-  if(!history || history.length===0) return 0;
-  const last = history[history.length-1];
-  const lastDate = new Date(last.date);
-  const startDate = new Date(lastDate);
-  startDate.setDate(lastDate.getDate() - days);
-  let startRec = history[0];
+/* --- history utilities using datetime --- */
+/*
+ history: array of entries; supported legacy {date:"YYYY-MM-DD"} or new {datetime:"ISO...", views: n}
+ We will treat each entry's timestamp via parseISOorDateString(entry.datetime || entry.date)
+*/
+function lastHistoryEntry(history){
+  if(!history || history.length===0) return null;
+  return history[history.length-1];
+}
+
+function findClosestBefore(history, targetDate){
+  // find last entry with timestamp <= targetDate
+  if(!history || history.length===0) return null;
+  let candidate = history[0];
   for(const rec of history){
-    const d = new Date(rec.date);
-    if(d <= startDate) startRec = rec;
+    const t = rec.datetime ? new Date(rec.datetime) : (rec.date ? new Date(rec.date + 'T00:00:00.000Z') : null);
+    if(!t) continue;
+    if(t <= targetDate) candidate = rec;
     else break;
   }
-  return last.views - startRec.views;
+  return candidate;
+}
+
+function calcDelta(history, days){
+  // compute last.views - views at (lastTime - days)
+  if(!history || history.length===0) return 0;
+  const lastRec = lastHistoryEntry(history);
+  const lastDate = lastRec ? (lastRec.datetime ? new Date(lastRec.datetime) : (lastRec.date ? new Date(lastRec.date + 'T00:00:00.000Z') : null)) : null;
+  if(!lastDate) return 0;
+  const startDate = new Date(lastDate);
+  startDate.setUTCDate(startDate.getUTCDate() - days);
+  // find start rec
+  const startRec = findClosestBefore(history, startDate) || history[0];
+  if(!startRec) return 0;
+  const startViews = startRec.views || 0;
+  const lastViews = lastRec.views || 0;
+  return lastViews - startViews;
 }
 
 /* --- render ranking --- */
@@ -255,7 +298,7 @@ function renderRankList(){
   });
 
   const annotated = list.map(v=>{
-    const latest = v.history && v.history.length ? v.history[v.history.length-1].views : (v.views || 0);
+    const latest = v.history && v.history.length ? (v.history[v.history.length-1].views || 0) : (v.views || 0);
     const d7 = calcDelta(v.history, 7);
     const d30 = calcDelta(v.history, 30);
     return {...v, latest, d7, d30};
@@ -302,7 +345,9 @@ function selectVideo(v){
   currentSelected = v;
   document.getElementById('selectedTitle').innerText = v.title;
   document.getElementById('selectedMeta').innerHTML = `${v.banner} ・ ${v.unit} ・ <a href="${v.url}" target="_blank" style="color:var(--accent)">YouTubeへ</a>`;
-  document.getElementById('selectedViews').innerText = fmt(v.history && v.history.length ? v.history[v.history.length-1].views : v.views) + ' 回';
+  const lastRec = v.history && v.history.length ? v.history[v.history.length-1] : null;
+  const lastViews = lastRec ? lastRec.views : (v.views || 0);
+  document.getElementById('selectedViews').innerText = fmt(lastViews) + ' 回';
   document.getElementById('viewDelta7').innerText = fmt(calcDelta(v.history,7)) + ' 回';
   document.getElementById('viewDelta30').innerText = fmt(calcDelta(v.history,30)) + ' 回';
   document.getElementById('publishDate').innerText = v.published || '—';
@@ -317,17 +362,34 @@ function drawChartForSelection(period){
     ctx.clearRect(0,0,ctx.canvas.width, ctx.canvas.height);
     return;
   }
-  let points = hist.slice();
-  if(period === '7') points = hist.slice(Math.max(0, hist.length - 7));
-  else if(period === '30') points = hist.slice(Math.max(0, hist.length - 30));
+  // convert to entries with timestamp and views
+  const pts = hist.map(h => {
+    const ts = h.datetime ? new Date(h.datetime) : (h.date ? new Date(h.date + 'T00:00:00.000Z') : null);
+    return ts ? { t: ts, v: (h.views || 0) } : null;
+  }).filter(Boolean);
 
-  const labels = points.map(p=>p.date);
-  const data = points.map(p=>p.views);
+  let points = pts.slice();
+  if(period === '7') {
+    const cutoff = new Date(points[points.length-1].t);
+    cutoff.setUTCDate(cutoff.getUTCDate() - 7);
+    points = points.filter(p => p.t >= cutoff);
+  } else if(period === '30') {
+    const cutoff = new Date(points[points.length-1].t);
+    cutoff.setUTCDate(cutoff.getUTCDate() - 30);
+    points = points.filter(p => p.t >= cutoff);
+  }
+
+  const labels = points.map(p => {
+    // show local short datetime
+    const d = p.t;
+    return d.toLocaleString();
+  });
+  const data = points.map(p => p.v);
 
   if(chart) chart.destroy();
   chart = new Chart(ctx, {
     type: 'line',
-    data: { labels, datasets: [{ label: currentSelected.title, data, tension:0.2, fill:true, backgroundColor: 'rgba(59,130,246,0.06)', borderColor:'rgba(59,130,246,0.9)', pointRadius:3 }]},
+    data: { labels, datasets: [{ label: currentSelected.title, data, tension:0.2, fill:true, backgroundColor: 'rgba(59,130,246,0.06)', borderColor:'rgba(59,130,246,0.9)', pointRadius:2 }]},
     options: {
       responsive:true, maintainAspectRatio:false,
       scales: {
@@ -359,7 +421,6 @@ document.querySelectorAll('.tab-mode').forEach(btn=>{
 /* --- default select --- */
 function selectDefault(){
   if(DATA.length) {
-    // 最新の累計が多い順で最初の1つを選ぶ
     const sorted = DATA.slice().sort((a,b)=> {
       const la = a.history && a.history.length ? a.history[a.history.length-1].views : (a.views||0);
       const lb = b.history && b.history.length ? b.history[b.history.length-1].views : (b.views||0);
