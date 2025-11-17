@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>YouTube 再生数ダッシュボード（GitHub Pages 対応）</title>
+
+<!-- Chart.js (CDN) -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<style>
+  body{font-family: "Noto Sans JP", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; margin:0; background:#f5f7fb; color:#102030;}
+  .wrap{max-width:1100px;margin:28px auto;padding:18px;}
+  h1{margin:0 0 8px 0;}
+  .row{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;}
+  .card{background:#fff;border-radius:10px;padding:12px;box-shadow:0 6px 18px rgba(16,32,48,0.06);}
+  .left{flex:0 0 360px;}
+  .right{flex:1;min-width:260px;}
+  label{display:block;font-size:13px;color:#334155;margin-bottom:6px}
+  input[type="text"], textarea, select{width:100%;padding:8px;border:1px solid #dbe6f0;border-radius:8px;font-size:14px}
+  button{padding:8px 10px;border-radius:8px;border:none;background:#2563eb;color:#fff;cursor:pointer}
+  button.ghost{background:transparent;color:#2563eb;border:1px solid #cfe0ff}
+  .small{font-size:13px;padding:6px 8px}
+  .video-list{max-height:480px;overflow:auto;margin-top:8px;display:flex;flex-direction:column;gap:8px}
+  .video-item{display:flex;gap:10px;align-items:center;padding:8px;border-radius:8px;border:1px solid #eef6ff}
+  .video-thumb{width:120px;height:68px;object-fit:cover;border-radius:6px}
+  .meta{flex:1;min-width:0}
+  .meta .title{font-weight:700;color:#0f1724;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .meta .sub{color:#475569;font-size:13px;margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .meta .muted{color:#94a3b8;font-size:12px}
+  .controls{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+  .footer-note{font-size:13px;color:#475569;margin-top:10px}
+  .flex-between{display:flex;justify-content:space-between;align-items:center}
+  .chart-card{height:360px;padding:10px}
+  .import-export{display:flex;gap:8px;flex-wrap:wrap}
+  @media (max-width:900px){ .left{flex:1 1 100%} .right{flex:1 1 100%} }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="flex-between">
+      <div>
+        <h1>YouTube 再生数ダッシュボード（デザイン＋YouTube API）</h1>
+        <div class="footer-note">動画URLを追加 → APIで最新情報を取得 → 日次スナップショットを蓄積して推移グラフ表示</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:13px;color:#475569">Static site (GitHub Pages) に対応</div>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:14px;">
+      <!-- 左カラム：設定 / 追加 -->
+      <div class="card left">
+        <label>1) YouTube API キー（API_KEY）</label>
+        <input id="apiKey" type="text" placeholder="ここに API キーを貼ってください（localStorage に保存）">
+        <div class="controls" style="margin-top:8px;">
+          <button id="saveKey" class="small">保存</button>
+          <button id="clearKey" class="small ghost">クリア</button>
+        </div>
+        <div class="footer-note" style="margin-top:8px">
+          ※ GitHub Pages は公開サイトです。運用中は API キーに「HTTP リファラ制限」をかけることを強く推奨します（後述）。 [oai_citation:1‡Google Cloud Documentation](https://docs.cloud.google.com/api-keys/docs/add-restrictions-api-keys?utm_source=chatgpt.com)
+        </div>
+
+        <hr style="margin:12px 0;border:none;border-top:1px solid #eef6ff"/>
+
+        <label>2) 動画を追加（URL / 動画ID を改行で複数入力）</label>
+        <textarea id="pasteArea" rows="5" placeholder="例：https://youtu.be/VIDEO_ID または VIDEO_ID を貼って Enter"></textarea>
+        <div class="controls" style="margin-top:8px;">
+          <button id="addVideos" class="small">追加</button>
+          <button id="importJson" class="small ghost">JSON 取り込み</button>
+          <button id="exportJson" class="small ghost">データ書き出し（JSON）</button>
+        </div>
+
+        <div style="margin-top:12px;">
+          <label>保存済み動画</label>
+          <div class="video-list card" id="videoList"></div>
+        </div>
+
+        <div style="margin-top:10px" class="controls">
+          <button id="fetchAll">全動画の最新データ取得</button>
+          <button id="snapshotAll" class="small ghost">スナップショットを保存（今日の再生数を履歴に追加）</button>
+        </div>
+
+        <div class="footer-note" style="margin-top:10px">
+          ・動画ごとに「取得ボタン」で個別更新できます。<br>
+          ・チャートは localStorage に保存された履歴（history）を使います。YouTube Data API は現在の累計値しか返さないため、履歴を残すには「スナップショットの自動化」が必要です（下段で方法を説明）。 [oai_citation:2‡Stack Overflow](https://stackoverflow.com/questions/72323649/youtube-api-historical-video-views-on-channel?utm_source=chatgpt.com)
+        </div>
+      </div>
+
+      <!-- 右カラム：チャート / 詳細 -->
+      <div class="card right">
+        <div class="flex-between">
+          <div>
+            <strong>選択中の動画</strong>
+            <div id="selectedTitle" style="font-weight:700;color:#0f1724;margin-top:6px">（動画を選択してください）</div>
+            <div id="selectedMeta" class="muted" style="margin-top:6px"></div>
+          </div>
+          <div style="text-align:right">
+            <div class="muted">最新再生数</div>
+            <div id="selectedViews" style="font-weight:800;font-size:18px">—</div>
+          </div>
+        </div>
+
+        <div style="margin-top:12px" class="chart-card">
+          <canvas id="chartCanvas" style="width:100%;height:100%"></canvas>
+        </div>
+
+        <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <label style="margin:0">期間表示：</label>
+          <select id="periodSelect">
+            <option value="all">全期間</option>
+            <option value="365">直近365日</option>
+            <option value="90">直近90日</option>
+            <option value="30">直近30日</option>
+            <option value="7">直近7日</option>
+          </select>
+          <button id="deleteSelected" class="small ghost">選択動画を削除</button>
+          <button id="clearAll" class="small ghost">全データ消去</button>
+        </div>
+
+        <div class="footer-note" style="margin-top:12px">
+          ・履歴 (history) は {date: "YYYY-MM-DD", views: number} の累計再生数を貯めます。自動で長期履歴を残すにはサーバー側で定期実行して JSON を更新する方法を使ってください（後述：GitHub Actions 例あり）。 [oai_citation:3‡Google for Developers](https://developers.google.com/youtube/analytics/reference/reports/query?utm_source=chatgpt.com)
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* ======================
+  動作の全体イメージ（ポイント）
+  - localStorage にデータを保存して GitHub Pages の静的サイトでも動くようにする
+  - YouTube Data API (videos.list?part=snippet,statistics&id=...) を使って最新情報を取得
+  - history を localStorage に保存し、グラフ表示に使う
+  - 動画追加は「URL / ID の貼り付け」で簡単にできる
+  ====================== */
+
+/* ---------- ユーティリティ ---------- */
+function qs(id){ return document.getElementById(id); }
+function todayStr(){
+  const d = new Date();
+  return d.toISOString().slice(0,10);
+}
+function formatNumber(n){ return (n||0).toLocaleString(); }
+function extractVideoId(s){
+  // URL または ID を受け取り、動画ID（11文字など）を抽出する（汎用的）
+  if(!s) return null;
+  s = s.trim();
+  // common patterns
+  const urlPatterns = [
+    /(?:v=|\/videos\/|embed\/|youtu\.be\/|\/v\/)([A-Za-z0-9_-]{11,})/,
+    /^([A-Za-z0-9_-]{11,})$/ // plain id
+  ];
+  for(const r of urlPatterns){
+    const m = s.match(r);
+    if(m && m[1]) return m[1];
+  }
+  // fallback: last path segment
+  try{
+    const u = new URL(s);
+    const p = u.pathname.split('/').filter(Boolean).pop();
+    if(p && p.length>=6) return p;
+  }catch(e){}
+  return null;
+}
+
+/* ---------- データ構造（localStorage に保存） ----------
+  storage key: "ytdash_videos"
+  structure:
+  {
+    videos: {
+      "<videoId>": {
+         id, url, title, thumbnail, published, latestViews, banner(optional), unit(optional),
+         history: [{date:"YYYY-MM-DD", views:number}, ...]  // 昇順で入れる
+      },
+      ...
+    }
+  }
+  ===================================================== */
+const STORAGE_KEY = 'ytdash_videos';
+
+function loadStore(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw) return {videos:{}};
+    return JSON.parse(raw);
+  }catch(e){
+    console.warn(e);
+    return {videos:{}};
+  }
+}
+function saveStore(store){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+}
+
+/* ---------- DOM / 初期化 ---------- */
+const apiKeyEl = qs('apiKey');
+const saveKeyBtn = qs('saveKey');
+const clearKeyBtn = qs('clearKey');
+const pasteArea = qs('pasteArea');
+const addVideosBtn = qs('addVideos');
+const videoListEl = qs('videoList');
+const fetchAllBtn = qs('fetchAll');
+const snapshotAllBtn = qs('snapshotAll');
+const selectedTitleEl = qs('selectedTitle');
+const selectedMetaEl = qs('selectedMeta');
+const selectedViewsEl = qs('selectedViews');
+const chartCanvas = qs('chartCanvas');
+const periodSelect = qs('periodSelect');
+const deleteSelectedBtn = qs('deleteSelected');
+const clearAllBtn = qs('clearAll');
+const importJsonBtn = qs('importJson');
+const exportJsonBtn = qs('exportJson');
+
+let store = loadStore();
+let selectedId = null;
+let chartObj = null;
+
+/* APIキーを localStorage に保存しておく（簡易） */
+function loadApiKey(){
+  return localStorage.getItem('ytdash_apikey') || '';
+}
+function saveApiKey(key){
+  localStorage.setItem('ytdash_apikey', key || '');
+}
+apiKeyEl.value = loadApiKey();
+saveKeyBtn.addEventListener('click', ()=>{
+  saveApiKey(apiKeyEl.value.trim());
+  alert('API キーを保存しました（localStorage）。GitHub Pages で公開する場合はリファラ制限を設定してください。');
+});
+clearKeyBtn.addEventListener('click', ()=>{
+  apiKeyEl.value='';
+  saveApiKey('');
+  alert('API キーをクリアしました。');
+});
+
+/* ---------- 動画リスト表示 / 追加 / 削除 ---------- */
+function renderVideoList(){
+  store = loadStore();
+  videoListEl.innerHTML = '';
+  const vids = Object.values(store.videos || {});
+  if(vids.length === 0){
+    videoListEl.innerHTML = '<div class="muted" style="padding:8px">動画がありません。上の textarea に URL / ID を貼って「追加」してください。</div>';
+    clearSelectionDisplay();
+    return;
+  }
+  vids.sort((a,b)=> (b.latestViews||0) - (a.latestViews||0));
+  vids.forEach(v=>{
+    const el = document.createElement('div');
+    el.className = 'video-item';
+    el.innerHTML = `
+      <img class="video-thumb" src="${v.thumbnail || ''}" alt="">
+      <div class="meta">
+        <div class="title">${v.title || v.id}</div>
+        <div class="sub">
+          <div class="muted">${v.published || ''}</div>
+          <div class="muted">最新: ${formatNumber(v.latestViews||0)} 回</div>
+          <div style="margin-left:auto;display:flex;gap:6px">
+            <button data-id="${v.id}" class="btn-fetch small ghost">取得</button>
+            <button data-id="${v.id}" class="btn-select small">選択</button>
+            <button data-id="${v.id}" class="btn-remove small ghost">削除</button>
+          </div>
+        </div>
+      </div>
+    `;
+    videoListEl.appendChild(el);
+  });
+
+  // bind buttons
+  videoListEl.querySelectorAll('.btn-remove').forEach(b=>{
+    b.addEventListener('click', e=>{
+      const id = e.currentTarget.dataset.id;
+      if(!confirm('動画を削除しますか？')) return;
+      delete store.videos[id];
+      saveStore(store);
+      renderVideoList();
+    });
+  });
+  videoListEl.querySelectorAll('.btn-fetch').forEach(b=>{
+    b.addEventListener('click', e=>{
+      const id = e.currentTarget.dataset.id;
+      fetchVideosByIds([id]);
+    });
+  });
+  videoListEl.querySelectorAll('.btn-select').forEach(b=>{
+    b.addEventListener('click', e=>{
+      const id = e.currentTarget.dataset.id;
+      selectVideo(id);
+    });
+  });
+}
+
+/* 追加処理 */
+addVideosBtn.addEventListener('click', ()=>{
+  const lines = pasteArea.value.split(/\n/).map(s=>s.trim()).filter(Boolean);
+  const ids = [];
+  for(const l of lines){
+    const id = extractVideoId(l);
+    if(id) ids.push(id);
+  }
+  if(ids.length===0){ alert('URL / ID が見つかりませんでした'); return; }
+  // add to store
+  store = loadStore();
+  for(const id of ids){
+    if(!store.videos) store.videos = {};
+    if(!store.videos[id]){
+      store.videos[id] = { id, url: `https://youtu.be/${id}`, title: '', thumbnail:'', published:'', latestViews:0, history:[] };
+    }
+  }
+  saveStore(store);
+  pasteArea.value = '';
+  renderVideoList();
+  // optionally fetch details immediately
+  if(confirm('追加しました。今すぐ YouTube から最新データを取得しますか？（API を使用します）')) {
+    fetchVideosByIds(ids);
+  }
+});
+
+/* インポート / エクスポート（JSON） */
+importJsonBtn.addEventListener('click', ()=>{
+  const text = prompt('貼り付ける JSON を入力してください（既存データに上書きされます）');
+  if(!text) return;
+  try{
+    const obj = JSON.parse(text);
+    if(obj && obj.videos){
+      store = obj;
+      saveStore(store);
+      renderVideoList();
+      alert('インポートしました');
+    }else alert('期待するフォーマットではありません（{videos:{...}}）');
+  }catch(e){ alert('JSON パースエラー'); }
+});
+exportJsonBtn.addEventListener('click', ()=>{
+  const data = JSON.stringify(loadStore(), null, 2);
+  // ダイアログで表示（ユーザーがコピー）
+  const w = window.open('', '_blank');
+  w.document.body.innerText = data;
+});
+
+/* 全データ消去 */
+clearAllBtn.addEventListener('click', ()=>{
+  if(!confirm('ローカルに保存した全データを削除します（元に戻せません）')) return;
+  store = {videos:{}};
+  saveStore(store);
+  renderVideoList();
+});
+
+/* ---------- YouTube API 呼び出し（videos.list） ----------
+   - videos.list?part=snippet,statistics&id=ID1,ID2&key=API_KEY
+   - 1 リクエストで最大 50 IDs（公式）なのでバッチ処理する
+   - 返り値から snippet (title, thumbnails, publishedAt) と statistics.viewCount を取得
+   ============================================================ */
+async function fetchVideosByIds(ids){
+  if(!ids || ids.length===0) return;
+  const key = loadApiKey();
+  if(!key){ alert('API キーが未設定です。上の欄に API キーを入力して「保存」してください'); return; }
+  // chunk into 50
+  const CHUNK = 50;
+  for(let i=0;i<ids.length;i+=CHUNK){
+    const chunk = ids.slice(i, i+CHUNK);
+    const param = new URLSearchParams({
+      part: 'snippet,statistics',
+      id: chunk.join(','),
+      key
+    });
+    try{
+      const url = `https://www.googleapis.com/youtube/v3/videos?${param.toString()}`;
+      const res = await fetch(url);
+      if(!res.ok){
+        const text = await res.text();
+        console.error('API error', res.status, text);
+        alert('YouTube API エラー: ' + res.status + ' — Console を確認してください');
+        return;
+      }
+      const data = await res.json();
+      // update store
+      store = loadStore();
+      for(const item of data.items || []){
+        const id = item.id;
+        const snippet = item.snippet || {};
+        const stats = item.statistics || {};
+        if(!store.videos) store.videos = {};
+        if(!store.videos[id]) store.videos[id] = { id, url:`https://youtu.be/${id}`, history:[] };
+        store.videos[id].title = snippet.title || store.videos[id].title || '';
+        store.videos[id].thumbnail = (snippet.thumbnails && (snippet.thumbnails.medium?.url || snippet.thumbnails.default?.url)) || store.videos[id].thumbnail || '';
+        store.videos[id].published = snippet.publishedAt ? snippet.publishedAt.slice(0,10) : store.videos[id].published || '';
+        const views = stats.viewCount ? parseInt(stats.viewCount,10) : (store.videos[id].latestViews || 0);
+        store.videos[id].latestViews = views;
+        // optional: if today's snapshot not recorded, append
+        const h = store.videos[id].history || [];
+        if(h.length === 0 || h[h.length-1].date !== todayStr()){
+          h.push({date: todayStr(), views});
+          // keep only last 1000 points to avoid bloat
+          if(h.length > 2000) h.splice(0, h.length-2000);
+        } else {
+          // update today's entry to latest views
+          h[h.length-1].views = views;
+        }
+        store.videos[id].history = h;
+      }
+      saveStore(store);
+      renderVideoList();
+      // if selected video among chunk, refresh chart
+      if(selectedId && chunk.includes(selectedId)) drawSelectedChart();
+    }catch(err){
+      console.error(err);
+      alert('API 呼び出しでエラーが発生しました（console を確認してください）');
+      return;
+    }
+    // small delay between chunks to be polite / avoid quota burst
+    await new Promise(r=>setTimeout(r, 200));
+  }
+}
+
+/* 全取得ボタン */
+fetchAllBtn.addEventListener('click', ()=>{
+  const ids = Object.keys((loadStore().videos)||{});
+  if(ids.length===0) { alert('動画がありません'); return; }
+  if(!confirm(`登録済み ${ids.length} 本の動画の最新情報を取得します。API を使用します。`)) return;
+  fetchVideosByIds(ids);
+});
+
+/* スナップショット（手動） */
+snapshotAllBtn.addEventListener('click', ()=>{
+  // snapshot というボタンは、現在の latestViews を history に必ず記録する（fetch を伴わないので、先に fetch した上で押すのが良い）
+  store = loadStore();
+  const ids = Object.keys(store.videos || {});
+  let any=false;
+  for(const id of ids){
+    const v = store.videos[id];
+    if(!v) continue;
+    v.history = v.history || [];
+    if(v.history.length===0 || v.history[v.history.length-1].date !== todayStr()){
+      v.history.push({date: todayStr(), views: v.latestViews || 0});
+      any=true;
+    } else {
+      v.history[v.history.length-1].views = v.latestViews || 0;
+    }
+  }
+  if(any){
+    saveStore(store);
+    alert('スナップショットを保存しました（localStorage）');
+    drawSelectedChart();
+  } else alert('今日のスナップショットは既に存在します。');
+});
+
+/* ---------- 選択・グラフ描画 ---------- */
+function clearSelectionDisplay(){
+  selectedId = null;
+  selectedTitleEl.innerText = '（動画を選択してください）';
+  selectedMetaEl.innerText = '';
+  selectedViewsEl.innerText = '—';
+  if(chartObj){ chartObj.destroy(); chartObj = null; }
+}
+
+function selectVideo(id){
+  store = loadStore();
+  if(!store.videos || !store.videos[id]) { alert('動画が見つかりません'); return; }
+  selectedId = id;
+  const v = store.videos[id];
+  selectedTitleEl.innerText = v.title || id;
+  selectedMetaEl.innerHTML = `${v.published || ''} ・ <a href="${v.url}" target="_blank">YouTube を開く</a>`;
+  selectedViewsEl.innerText = formatNumber(v.latestViews || 0) + ' 回';
+  drawSelectedChart();
+}
+function drawSelectedChart(){
+  if(!selectedId){ clearSelectionDisplay(); return; }
+  const v = loadStore().videos[selectedId];
+  if(!v){ clearSelectionDisplay(); return; }
+  const hist = (v.history || []).slice(); // copy
+  if(hist.length===0){
+    if(chartObj){ chartObj.destroy(); chartObj = null; }
+    const ctx = chartCanvas.getContext('2d');
+    ctx.clearRect(0,0,chartCanvas.width, chartCanvas.height);
+    return;
+  }
+  // filter by period
+  const period = periodSelect.value;
+  let points = hist;
+  if(period !== 'all'){
+    const days = parseInt(period,10);
+    points = hist.slice(-days);
+  }
+  const labels = points.map(p=>p.date);
+  const data = points.map(p=>p.views);
+  if(chartObj) chartObj.destroy();
+  chartObj = new Chart(chartCanvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: v.title || selectedId,
+        data,
+        tension: 0.25,
+        pointRadius: 3,
+        backgroundColor: 'rgba(37,99,235,0.08)',
+        borderColor: 'rgba(37,99,235,0.95)',
+        fill: true
+      }]
+    },
+    options: {
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { maxRotation: 0, autoSkip: true } },
+        y: { ticks: { callback: v=>Intl.NumberFormat().format(v) } }
+      },
+      interaction: { mode: 'index', intersect: false },
+      elements: { point: { hoverRadius: 6 } }
+    }
+  });
+}
+
+/* periodSelect change */
+periodSelect.addEventListener('change', drawSelectedChart);
+
+/* select / delete selected */
+deleteSelectedBtn.addEventListener('click', ()=>{
+  if(!selectedId) return alert('動画を選択してください');
+  if(!confirm('選択中の動画を削除しますか？（保存された履歴も消えます）')) return;
+  store = loadStore();
+  delete store.videos[selectedId];
+  saveStore(store);
+  selectedId = null;
+  renderVideoList();
+});
+
+/* 初回レンダリング */
+renderVideoList();
+
+/* ページロード時に localStorage の API キーがあるなら input に入れておく */
+apiKeyEl.value = loadApiKey();
+
+/* ユーザーがページを離れる際に store を保障して保存（冗長） */
+window.addEventListener('beforeunload', ()=> saveStore(store));
+
+</script>
+</body>
+</html>
