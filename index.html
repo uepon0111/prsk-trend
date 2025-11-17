@@ -179,7 +179,7 @@ function safe(s){ return String(s||''); }
 let DATA = [];
 async function loadData(){
   try{
-    const res = await fetch('/data/videos.json', {cache: "no-store"});
+    const res = await fetch('data/videos.json', {cache: "no-store"});
     if(!res.ok) throw new Error('data/videos.json が見つかりません: ' + res.status);
     const json = await res.json();
     DATA = json.videos || [];
@@ -374,3 +374,4 @@ loadData();
 </script>
 </body>
 </html>
+
