@@ -1,8 +1,9 @@
 // scripts/fetch_youtube.js
-// - GitHub Actions から node 18 で実行することを想定
-// - 必須: 環境変数 YOUTUBE_API_KEY を GitHub Secrets に設定
+// - Node 18 前提 (Actions の setup-node で node-version: '18' を使ってください)
+// - 必須: 環境変数 YOUTUBE_API_KEY を GitHub Actions Secrets に設定
 // - 入力: videos_list.json (各エントリに url, banner, unit)
 // - 出力: data/videos.json (各動画に videoId, url, title, thumbnail, published, banner, unit, history の配列)
+// - 履歴は { datetime: "2025-11-17T12:30:00.000Z", views: 12345 } の形で保存（30分刻み）
 
 const fs = require('fs').promises;
 const path = require('path');
@@ -23,54 +24,73 @@ async function fetchJson(url) {
   return await res.json();
 }
 
-function todayStr() {
-  const d = new Date();
-  return d.toISOString().slice(0, 10);
+function nowRoundedTo30MinISO(date = new Date()) {
+  const d = new Date(date);
+  const m = d.getUTCMinutes();
+  if (m >= 30) d.setUTCMinutes(30);
+  else d.setUTCMinutes(0);
+  d.setUTCSeconds(0);
+  d.setUTCMilliseconds(0);
+  return d.toISOString();
 }
 
-function trimHistory(history, max = 500) {
+function parseHistoryEntryDatetime(e) {
+  // Accept either { datetime: "..."} or { date: "YYYY-MM-DD" } (legacy)
+  if (!e) return null;
+  if (e.datetime) return new Date(e.datetime);
+  if (e.date) {
+    // treat as midnight UTC to preserve existing
+    return new Date(e.date + 'T00:00:00.000Z');
+  }
+  return null;
+}
+
+function isoFromEntry(e) {
+  if (!e) return null;
+  if (e.datetime) return e.datetime;
+  if (e.date) return e.date + 'T00:00:00.000Z';
+  return null;
+}
+
+function trimHistory(history, max = 5000) {
   if (!Array.isArray(history)) return [];
   if (history.length <= max) return history;
   return history.slice(history.length - max);
 }
 
-// URL から YouTube の videoId を抽出するユーティリティ
+// URL から YouTube の videoId を抽出するユーティリティ（ショート URL / watch?v= / shorts / embed 対応）
 function extractVideoIdFromUrl(urlStr) {
   if (!urlStr) return null;
   try {
-    // ensure it has protocol
     if (!/^https?:\/\//i.test(urlStr)) urlStr = 'https://' + urlStr;
     const url = new URL(urlStr);
     const host = url.hostname.toLowerCase();
 
-    // youtu.be short link
     if (host === 'youtu.be') {
       const p = url.pathname.split('/').filter(Boolean);
       return p[0] || null;
     }
 
-    // youtube domains
     if (host.endsWith('youtube.com') || host.endsWith('youtube-nocookie.com')) {
       const p = url.pathname.split('/').filter(Boolean);
-      // watch?v=ID
       if (url.searchParams && url.searchParams.get('v')) return url.searchParams.get('v');
-      // shorts/ID
       if (p[0] === 'shorts' && p[1]) return p[1];
-      // embed/ID
       if (p[0] === 'embed' && p[1]) return p[1];
-      // v/ID
       if (p[0] === 'v' && p[1]) return p[1];
     }
 
-    // fallback: attempt to match typical 11-char id in the URL using regex
+    // fallback: match typical 11-char id
     const m = urlStr.match(/([A-Za-z0-9_-]{11})/);
     if (m) return m[1];
-
     return null;
   } catch (e) {
     return null;
   }
 }
+
+(function isoNow() {
+  // noop placeholder for linter friendliness
+})();
 
 (async () => {
   try {
@@ -98,7 +118,7 @@ function extractVideoIdFromUrl(urlStr) {
       if (v.videoId) existingMap.set(v.videoId, v);
     });
 
-    // videos_list の各 entry から videoId を抽出して配列化
+    // entries: [{ videoId, url, banner, unit }, ...]
     const entries = [];
     for (const meta of list) {
       const url = meta.url;
@@ -115,9 +135,12 @@ function extractVideoIdFromUrl(urlStr) {
       process.exit(1);
     }
 
-    // YouTube API は一度に最大50個の id を指定可 -> バッチ処理
+    // fetch in batches (max 50)
     const batchSize = 50;
     const results = [];
+
+    // current rounded datetime in ISO (UTC) to use as key (30-min rounded)
+    const currentRounded = nowRoundedTo30MinISO(new Date());
 
     for (let i = 0; i < entries.length; i += batchSize) {
       const chunk = entries.slice(i, i + batchSize);
@@ -129,7 +152,7 @@ function extractVideoIdFromUrl(urlStr) {
         json = await fetchJson(urlApi);
       } catch (err) {
         console.error('YouTube API 取得エラー:', err.message);
-        // エラー時は既存データを可能な限り返す（安全に続行）
+        // on error: fallback to existing data for this chunk
         for (const meta of chunk) {
           const prev = existingMap.get(meta.videoId);
           const prevHistory = prev && prev.history ? prev.history.slice() : [];
@@ -162,13 +185,29 @@ function extractVideoIdFromUrl(urlStr) {
         const prev = existingMap.get(id);
         let history = prev && Array.isArray(prev.history) ? prev.history.slice() : [];
 
-        const today = todayStr();
-        if (history.length === 0 || history[history.length - 1].date !== today) {
-          history.push({ date: today, views: views });
+        // normalize legacy 'date' entries by keeping them but not altering
+        // Check last entry datetime (either datetime or date)
+        let lastEntry = history.length ? history[history.length - 1] : null;
+        let lastIso = lastEntry ? isoFromEntry(lastEntry) : null;
+
+        if (!lastIso) {
+          // no previous history -> push new rounded entry
+          history.push({ datetime: currentRounded, views: views });
         } else {
-          history[history.length - 1].views = views;
+          // compare rounded iso strings: if last entry is at same rounded time, update; otherwise push
+          // convert lastIso to Date and round to 30min to be safe
+          let lastDate = new Date(lastIso);
+          // round lastDate to 30min
+          const roundedLast = nowRoundedTo30MinISO(lastDate);
+          if (roundedLast === currentRounded) {
+            // update last entry's views (works for both datetime and date legacy, we modify to datetime)
+            history[history.length - 1] = { datetime: currentRounded, views: views };
+          } else {
+            history.push({ datetime: currentRounded, views: views });
+          }
         }
-        history = trimHistory(history, 500);
+
+        history = trimHistory(history, 5000);
 
         results.push({
           videoId: id,
@@ -186,7 +225,6 @@ function extractVideoIdFromUrl(urlStr) {
     const out = { updated_at: new Date().toISOString(), videos: results };
     await fs.writeFile(OUT_PATH, JSON.stringify(out, null, 2), 'utf8');
     console.log('更新完了: data/videos.json を書き出しました。');
-
   } catch (err) {
     console.error('Error:', err);
     process.exit(1);
