@@ -34,7 +34,7 @@
     .rank-num{font-size:14px;color:#a6d6ff;width:28px;text-align:center}
     .stats-row{display:flex;gap:8px;align-items:center; justify-content:flex-end;}
     .big-card{padding:16px;}
-    .chart-area{height:320px;}
+    .chart-area{height:260px;}
     .tabs{display:flex;gap:8px;margin-bottom:12px;}
     .tabs button{background:transparent;border:1px solid rgba(255,255,255,0.04);padding:8px 12px;border-radius:8px;color:var(--muted);cursor:pointer;}
     .tabs button.active{background:linear-gradient(90deg,#0b2540,#01324a); color:#fff;border-color:transparent;}
@@ -140,7 +140,7 @@
           </div>
 
           <div class="chart-area card" style="padding:12px;">
-            <canvas id="trendChart" style="width:100%;height:320px"></canvas>
+            <canvas id="trendChart" style="width:100%;height:260px"></canvas>
           </div>
 
           <div style="margin-top:12px;display:flex;gap:12px;flex-wrap:wrap;">
@@ -222,17 +222,30 @@ const reloadBtn = document.getElementById('reload');
 
 function buildGroupOptions(){
   const banners = Array.from(new Set(DATA.map(v=>v.banner))).sort();
-  const units = Array.from(new Set(DATA.map(v=>v.unit))).sort();
+  const units = Array.from(new Set(DATA.map(v=>v.unit))).filter(Boolean);
+
+  // 指定のユニット順（ユーザー指定）
+  const desiredUnitOrder = [
+    "ユニット","レオニ","モモジャン","ビビバス","ワンダショ","ニーゴ","バナー","一歌","咲希","穂波",
+    "志歩","みのり","遥","愛莉","雫","こはね","杏","彰人","冬弥","司","えむ","寧々","類","奏","まふゆ","絵名","瑞希"
+  ];
+
+  // preserve any extra units not listed by appending them alphabetically after the desired order
+  const unitsSet = new Set(units);
+  const orderedUnits = desiredUnitOrder.filter(u=>unitsSet.has(u));
+  const remainder = units.filter(u=>!desiredUnitOrder.includes(u)).sort();
+  orderedUnits.push(...remainder);
+
   groupFilterEl.innerHTML = '<option value="all">グループ: 全て</option>';
   if(scopeEl.value === 'banner'){
     banners.forEach(b=> groupFilterEl.insertAdjacentHTML('beforeend', `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`));
   } else if(scopeEl.value === 'unit'){
-    units.forEach(u=> groupFilterEl.insertAdjacentHTML('beforeend', `<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`));
+    orderedUnits.forEach(u=> groupFilterEl.insertAdjacentHTML('beforeend', `<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`));
   } else {
     groupFilterEl.insertAdjacentHTML('beforeend','<option disabled>--- バナー ---</option>');
     banners.forEach(b=> groupFilterEl.insertAdjacentHTML('beforeend', `<option value="banner:${escapeHtml(b)}">${escapeHtml(b)}</option>`));
     groupFilterEl.insertAdjacentHTML('beforeend','<option disabled>--- ユニット ---</option>');
-    units.forEach(u=> groupFilterEl.insertAdjacentHTML('beforeend', `<option value="unit:${escapeHtml(u)}">${escapeHtml(u)}</option>`));
+    orderedUnits.forEach(u=> groupFilterEl.insertAdjacentHTML('beforeend', `<option value="unit:${escapeHtml(u)}">${escapeHtml(u)}</option>`));
   }
 }
 
@@ -435,4 +448,3 @@ loadData();
 </script>
 </body>
 </html>
-
