@@ -1,19 +1,19 @@
 {
   "videos": [
     {
-      "videoId": "agbpbVVA78U",
-      "banner": "絵名",
-      "unit": "ニーゴ"
+      "url": "https://youtu.be/VIDEO_ID_1",
+      "banner": "Aバナー",
+      "unit": "ユニットX"
     },
     {
-      "videoId": "RyRfLSOewbU",
-      "banner": "奏",
-      "unit": "ニーゴ"
+      "url": "https://www.youtube.com/watch?v=VIDEO_ID_2",
+      "banner": "Bバナー",
+      "unit": "ユニットY"
     },
     {
-      "videoId": "b_EcPgJ7Fnk",
-      "banner": "杏",
-      "unit": "ビビバス"
+      "url": "https://www.youtube.com/shorts/VIDEO_ID_3",
+      "banner": "Aバナー",
+      "unit": "ユニットZ"
     }
   ]
 }
