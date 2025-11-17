@@ -34,7 +34,7 @@
     .rank-num{font-size:14px;color:#a6d6ff;width:28px;text-align:center}
     .stats-row{display:flex;gap:8px;align-items:center; justify-content:flex-end;}
     .big-card{padding:16px;}
-    .chart-area{height:260px;}
+    .chart-area{height:320px;}
     .tabs{display:flex;gap:8px;margin-bottom:12px;}
     .tabs button{background:transparent;border:1px solid rgba(255,255,255,0.04);padding:8px 12px;border-radius:8px;color:var(--muted);cursor:pointer;}
     .tabs button.active{background:linear-gradient(90deg,#0b2540,#01324a); color:#fff;border-color:transparent;}
@@ -140,7 +140,7 @@
           </div>
 
           <div class="chart-area card" style="padding:12px;">
-            <canvas id="trendChart" style="width:100%;height:260px"></canvas>
+            <canvas id="trendChart" style="width:100%;height:320px"></canvas>
           </div>
 
           <div style="margin-top:12px;display:flex;gap:12px;flex-wrap:wrap;">
@@ -220,69 +220,19 @@ const scopeEl = document.getElementById('scope');
 const groupFilterEl = document.getElementById('groupFilter');
 const reloadBtn = document.getElementById('reload');
 
-/* Preferred group order provided by user (will be used for units ordering and combined listing)
-  Order intentionally kept as provided; any units present but not in this list will be appended alphabetically.
-*/
-const PREFERRED_GROUP_ORDER = [
-  "ユニット",
-  "レオニ",
-  "モモジャン",
-  "ビビバス",
-  "ワンダショ",
-  "ニーゴ",
-  "バナー",
-  "一歌",
-  "咲希",
-  "穂波",
-  "志歩",
-  "みのり",
-  "遥",
-  "愛莉",
-  "雫",
-  "こはね",
-  "杏",
-  "彰人",
-  "冬弥",
-  "司",
-  "えむ",
-  "寧々",
-  "類",
-  "奏",
-  "まふゆ",
-  "絵名",
-  "瑞希"
-];
-
-function orderArrayByPref(arr, pref){
-  const set = new Set(arr);
-  const ordered = [];
-  for(const p of pref){
-    if(set.has(p)){
-      ordered.push(p);
-      set.delete(p);
-    }
-  }
-  // remaining ones sorted
-  const rest = Array.from(set).sort();
-  return ordered.concat(rest);
-}
-
 function buildGroupOptions(){
-  const banners = Array.from(new Set(DATA.map(v=>v.banner))).filter(Boolean).sort();
-  const units = Array.from(new Set(DATA.map(v=>v.unit))).filter(Boolean);
-  // apply preferred order to units
-  const unitsOrdered = orderArrayByPref(units, PREFERRED_GROUP_ORDER);
-
+  const banners = Array.from(new Set(DATA.map(v=>v.banner))).sort();
+  const units = Array.from(new Set(DATA.map(v=>v.unit))).sort();
   groupFilterEl.innerHTML = '<option value="all">グループ: 全て</option>';
   if(scopeEl.value === 'banner'){
     banners.forEach(b=> groupFilterEl.insertAdjacentHTML('beforeend', `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`));
   } else if(scopeEl.value === 'unit'){
-    unitsOrdered.forEach(u=> groupFilterEl.insertAdjacentHTML('beforeend', `<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`));
+    units.forEach(u=> groupFilterEl.insertAdjacentHTML('beforeend', `<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`));
   } else {
     groupFilterEl.insertAdjacentHTML('beforeend','<option disabled>--- バナー ---</option>');
     banners.forEach(b=> groupFilterEl.insertAdjacentHTML('beforeend', `<option value="banner:${escapeHtml(b)}">${escapeHtml(b)}</option>`));
     groupFilterEl.insertAdjacentHTML('beforeend','<option disabled>--- ユニット ---</option>');
-    unitsOrdered.forEach(u=> groupFilterEl.insertAdjacentHTML('beforeend', `<option value="unit:${escapeHtml(u)}">${escapeHtml(u)}</option>`));
+    units.forEach(u=> groupFilterEl.insertAdjacentHTML('beforeend', `<option value="unit:${escapeHtml(u)}">${escapeHtml(u)}</option>`));
   }
 }
 
@@ -485,3 +435,4 @@ loadData();
 </script>
 </body>
 </html>
+
